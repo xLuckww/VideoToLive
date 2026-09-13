@@ -192,8 +192,11 @@ public enum LivePhotoVideoWriter {
             duration: min(frameDuration, max(end - stillTime, CMTime(value: 1, timescale: 600)))
         )
         let group = AVTimedMetadataGroup(items: [stillImageTimeItem()], timeRange: stillRange)
-        do { try metadataAdaptor.append(group) }
-        catch { throw LivePhotoError(.remux, "写入 still-image-time 元数据失败", underlying: error) }
+        // append 不抛错，而是用返回值表示成败。忽略返回值会静默产出一个缺少
+        // still-image-time 的文件：照片 App 可能仍认成实况，但静止画面位置不对。
+        guard metadataAdaptor.append(group) else {
+            throw LivePhotoError(.remux, "写入 still-image-time 元数据失败", underlying: writer.error)
+        }
         metadataInput.markAsFinished()
 
         guard reader.startReading() else {
