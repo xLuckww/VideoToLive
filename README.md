@@ -1,12 +1,25 @@
-# LivePhotoForge
+<p align="center">
+  <img src="Resources/AppIcon.png" width="128" alt="VideoToLive 图标">
+</p>
 
-把视频转成 Apple Live Photo 的 macOS 应用。**视频轨不重新编码，输出码流与源片段逐字节一致。**
+<h1 align="center">VideoToLive</h1>
+
+<p align="center">
+  把视频转成 Apple Live Photo 的 macOS 应用。<b>视频轨不重新编码，输出码流与源片段逐字节一致。</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/xLuckww/VideoToLive/releases/latest">下载最新版本</a> ·
+  macOS 13+ · Apple Silicon 与 Intel
+</p>
+
+![VideoToLive 界面](docs/screenshot.jpg)
 
 转好的实况照片会直接写入「照片」App，并通过 iCloud 同步到 iPhone。无时长限制、无次数限制、无水印，全程离线处理。
 
 ## 为什么做这个
 
-大多数视频转实况工具都会重新编码视频，4K 素材转完画质会明显下降。LivePhotoForge 只重新封装容器，把原始 H.264 / HEVC 码流原样搬进 Live Photo 所需的 MOV 文件。
+大多数视频转实况工具都会重新编码视频，4K 素材转完画质会明显下降。VideoToLive 只重新封装容器，把原始 H.264 / HEVC 码流原样搬进 Live Photo 所需的 MOV 文件。
 
 这不是一句宣传语，可以用 ffmpeg 自己验证：
 
@@ -34,25 +47,39 @@ ffmpeg -v error -i 输出.mov -map 0:v:0 -c copy -f md5 -
 2. **片段起点会吸附到关键帧。** 不重新编码时只能从关键帧切开，所以松开选区后起点会对齐到前一个关键帧，时长保持不变。确实需要精确到某一帧，就开启「精确裁剪」。
 3. **4K 实况分享出去会被压缩。** 存在本地相册里没问题，但发到微信、小红书等平台时，对方服务器会重新压缩。
 
-## 系统要求
+## 下载安装
 
-- macOS 13 或更高版本，推荐 Apple Silicon
-- Swift 6 工具链。只需要安装 Command Line Tools，不需要完整 Xcode
+1. 在 [Releases](https://github.com/xLuckww/VideoToLive/releases/latest) 下载 `VideoToLive-版本号.dmg`
+2. 打开 DMG，把 VideoToLive 拖到「应用程序」
+3. 第一次打开时，macOS 会提示「无法验证开发者」。这是因为 App 没有经过 Apple 公证，处理方法：
+   - 打开「系统设置 → 隐私与安全性」，在页面下方找到 VideoToLive，点击「仍要打开」
+   - 或者在终端运行：
+
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/VideoToLive.app
+     ```
+
+4. 首次写入照片图库时，系统会请求权限，允许即可
+
+## 从源码构建
+
+需要 macOS 13 或更高版本，以及 Swift 6 工具链。只需要 Command Line Tools，不需要完整 Xcode。
 
 ```bash
 xcode-select --install
-```
-
-## 构建与运行
-
-```bash
 git clone https://github.com/xLuckww/VideoToLive.git
 cd VideoToLive
 ./Scripts/build-app.sh
-open build/LivePhotoForge.app
+open build/VideoToLive.app
 ```
 
-构建脚本会编译程序，把它组装成 `.app`，并做 ad-hoc 签名。首次写入照片图库时，系统会请求权限，允许即可。
+其他脚本：
+
+| 命令 | 用途 |
+|---|---|
+| `./Scripts/build-app.sh --universal` | 编译同时支持 Apple Silicon 与 Intel 的版本 |
+| `./Scripts/make-dmg.sh` | 打包发布用的 DMG，输出到 `dist/` |
+| `swift Scripts/make-icon.swift` | 重新生成 App 图标 |
 
 ## 使用步骤
 
@@ -64,11 +91,11 @@ open build/LivePhotoForge.app
 
 ## 命令行工具
 
-项目还包含一个命令行工具 `lpforge`，适合批量处理和验证结果。
+项目还包含一个命令行工具 `vtl`，适合批量处理和验证结果。
 
 ```bash
 swift build -c release
-.build/release/lpforge convert 视频.mov --start 0:11 --duration 5
+.build/release/vtl convert 视频.mov --start 0:11 --duration 5
 ```
 
 | 命令 | 用途 |
@@ -110,26 +137,26 @@ Live Photo 由一张静态图和一段 MOV 视频组成，系统通过同一个 
 
 ```
 Sources/
-├── LivePhotoForgeCore/        核心库，不依赖界面
+├── VideoToLiveCore/           核心库，不依赖界面
 │   ├── VideoInspector         解析视频，判断能否无损直通
 │   ├── KeyframeIndex          查找关键帧，计算片段吸附位置
 │   ├── CoverFrameExtractor    精确抽帧，写入带 Maker Note 的封面
 │   ├── SharpnessScorer        用拉普拉斯方差评估清晰度
 │   ├── LivePhotoVideoWriter   无损封装视频并写入 Live Photo 元数据
 │   ├── PhotoLibraryImporter   写入照片图库
-│   ├── LivePhotoForge         串联整个转换流程
+│   ├── LivePhotoConverter     串联整个转换流程
 │   └── Timecode 等            基础类型和工具
-├── LivePhotoForgeApp/         SwiftUI 界面
+├── VideoToLive/               SwiftUI 界面
 │   ├── AppModel               界面状态和交互逻辑
 │   ├── ContentView            窗口布局、顶栏、空状态
 │   ├── PreviewMonitor         预览画布、进度和结果浮层
 │   ├── InspectorSidebar       右侧栏
 │   ├── TimelineDock           底部时间轴
 │   └── Theme                  颜色和控件样式
-└── lpforge/                   命令行工具
+└── vtl/                       命令行工具
 ```
 
-更完整的技术方案见 [LivePhotoForge-开发方案.md](LivePhotoForge-开发方案.md)，验证数据见 [docs/阶段一验证报告.md](docs/阶段一验证报告.md)。
+更完整的技术方案见 [开发方案](LivePhotoForge-开发方案.md)，验证数据见 [阶段一验证报告](docs/阶段一验证报告.md)。这两份是开发早期的记录，当时项目还叫 LivePhotoForge，命令行工具叫 `lpforge`。
 
 ## 开发状态
 
@@ -139,6 +166,7 @@ Sources/
 - [x] 写入照片图库并检查识别结果
 - [x] 时间轴选片段、关键帧吸附、精确裁剪
 - [x] 视频预览和自动选封面
+- [x] 同时支持 Apple Silicon 与 Intel 的 DMG 安装包
 
 计划中：
 
