@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -7,25 +8,19 @@ struct LivePhotoForgeApp: App {
     var body: some Scene {
         WindowGroup("LivePhotoForge") {
             ContentView(model: model)
-                .frame(minWidth: 520, idealWidth: 580, minHeight: 620, idealHeight: 820)
+                .frame(minWidth: 900, idealWidth: 1080, minHeight: 640, idealHeight: 760)
+                // 只做浅色主题，不跟随系统深色模式
+                .preferredColorScheme(.light)
+                .onAppear { NSApp.appearance = NSAppearance(named: .aqua) }
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .newItem) {
-                Button("打开视频…") { openPanel() }
+                Button("打开视频…") { model.presentOpenPanel() }
                     .keyboardShortcut("o")
             }
-        }
-    }
-
-    private func openPanel() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie, .movie]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url {
-            model.load(url)
         }
     }
 }

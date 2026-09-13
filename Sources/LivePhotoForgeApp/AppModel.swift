@@ -4,6 +4,7 @@ import CoreMedia
 import Foundation
 import LivePhotoForgeCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 拖入 → 选片段 → 自动选封面 → 一键生成。
 @MainActor
@@ -582,6 +583,28 @@ final class AppModel: ObservableObject {
                 self.phase = .failed
             }
         }
+    }
+
+    /// 打开文件选择面板。放在 model 里，菜单 ⌘O 和空状态按钮共用。
+    func presentOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie, .movie]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            load(url)
+        }
+    }
+
+    var canConvert: Bool {
+        guard info != nil else { return false }
+        return phase == .ready || phase == .finished || phase == .failed
+    }
+
+    func dismissResult() {
+        result = nil
+        failure = nil
+        if phase == .finished || phase == .failed { phase = info == nil ? .empty : .ready }
     }
 
     func revealInPhotos() {
