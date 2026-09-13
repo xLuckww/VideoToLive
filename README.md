@@ -46,8 +46,8 @@ xcode-select --install
 ## 构建与运行
 
 ```bash
-git clone https://github.com/xLuckww/LivePhotoForge.git
-cd LivePhotoForge
+git clone https://github.com/xLuckww/VideoToLive.git
+cd VideoToLive
 ./Scripts/build-app.sh
 open build/LivePhotoForge.app
 ```
@@ -145,3 +145,7 @@ Sources/
 - [ ] 手动逐帧选择封面
 - [ ] 批量队列
 - [ ] 偏好设置，例如封面格式、是否保留音轨、默认时长
+
+## 许可证
+
+[MIT](LICENSE)
