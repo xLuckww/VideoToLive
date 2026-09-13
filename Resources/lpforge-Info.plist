@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.livephotoforge.lpforge</string>
+	<key>CFBundleName</key>
+	<string>lpforge</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>LivePhotoForge 需要把生成的 Live Photo 写入你的照片图库。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LivePhotoForge 需要访问照片图库以确认写入结果。</string>
+</dict>
+</plist>

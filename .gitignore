@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+*.xcuserdatad
+out/
+testdata/
+out*/
+build/
