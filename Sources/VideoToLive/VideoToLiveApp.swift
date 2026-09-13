@@ -2,11 +2,11 @@ import AppKit
 import SwiftUI
 
 @main
-struct LivePhotoForgeApp: App {
+struct VideoToLiveApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("LivePhotoForge") {
+        WindowGroup("VideoToLive") {
             ContentView(model: model)
                 .frame(minWidth: 900, idealWidth: 1080, minHeight: 640, idealHeight: 760)
                 // 只做浅色主题，不跟随系统深色模式

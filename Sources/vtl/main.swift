@@ -1,21 +1,21 @@
 import AVFoundation
 import CoreMedia
 import Foundation
-import LivePhotoForgeCore
+import VideoToLiveCore
 
 // 阶段一的测试入口。没有外部依赖，手写参数解析。
 
 let usage = """
-lpforge — LivePhotoForge 核心管线测试入口
+vtl — VideoToLive 命令行工具
 
 用法:
-  lpforge inspect <video>
+  vtl inspect <video>
       解析并打印时长 / 分辨率 / 帧率 / 编码 / 转换模式徽标
 
-  lpforge keyframes <video> [--start <秒>] [--duration <秒>]
+  vtl keyframes <video> [--start <秒>] [--duration <秒>]
       列出区间内的关键帧位置（裁剪吸附的依据）
 
-  lpforge convert <video> [选项]
+  vtl convert <video> [选项]
       跑通全链路：抽帧 → 编码封面 → 封装 → 写入图库
       --cover <秒|auto>   封面帧时间点，auto 走清晰度自动挑选（默认 auto）
       --start <秒|时间码>  裁剪起点，默认 0，支持 12.5 / 1:02.5 两种写法
@@ -27,14 +27,14 @@ lpforge — LivePhotoForge 核心管线测试入口
       --precise           精确裁剪（退回重编码，画质有损）
       --no-import         只产出文件，不写入照片图库
 
-  lpforge frames <video> --at <秒> [--count <n>]
+  vtl frames <video> --at <秒> [--count <n>]
       从指定时间点连续抽 n 帧，打印每帧的时间与像素指纹
       用来验证「方向键逐帧步进」确实不跳帧不重复（验收标准 5）
 
-  lpforge stress <video> [--times <n>] [--duration <秒>]
+  vtl stress <video> [--times <n>] [--duration <秒>]
       在同一进程里连续转换 n 次，报告峰值内存（验收标准 6）
 
-  lpforge verify <mov> [<封面图>]
+  vtl verify <mov> [<封面图>]
       回读 MOV 的 content.identifier / still-image-time 轨，以及封面的 Maker Note
 """
 
@@ -150,7 +150,7 @@ func runConvert(_ args: Args) async throws {
     }
 
     let workDirectory = args.flags["out"].map(url)
-        ?? FileManager.default.temporaryDirectory.appendingPathComponent("LivePhotoForge", isDirectory: true)
+        ?? FileManager.default.temporaryDirectory.appendingPathComponent("VideoToLive", isDirectory: true)
 
     let request = ConversionRequest(
         sourceURL: url(path),
@@ -166,7 +166,7 @@ func runConvert(_ args: Args) async throws {
     )
 
     let reporter = StageReporter()
-    let result = try await LivePhotoForge.convert(request) { stage, _ in
+    let result = try await LivePhotoConverter.convert(request) { stage, _ in
         reporter.report(stage)
     }
 
@@ -318,7 +318,7 @@ func runStress(_ args: Args) async throws {
     let times = Int(args.double("times") ?? 20)
     let seconds = args.double("duration") ?? 3
     let workDirectory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("LivePhotoForgeStress", isDirectory: true)
+        .appendingPathComponent("VideoToLiveStress", isDirectory: true)
     try? FileManager.default.removeItem(at: workDirectory)
 
     print("连续转换 \(times) 次，每次 \(seconds) s 片段，不写图库")
@@ -332,7 +332,7 @@ func runStress(_ args: Args) async throws {
             workDirectory: workDirectory,
             importToLibrary: false
         )
-        _ = try await LivePhotoForge.convert(request)
+        _ = try await LivePhotoConverter.convert(request)
         // 产物立刻清掉，只留内存曲线
         try? FileManager.default.removeItem(at: workDirectory)
         let rss = residentBytes()

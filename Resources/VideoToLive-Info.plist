@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
 	<key>CFBundleExecutable</key>
-	<string>LivePhotoForgeApp</string>
+	<string>VideoToLive</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.livephotoforge.app</string>
+	<string>com.xluckww.videotolive</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>LivePhotoForge</string>
+	<string>VideoToLive</string>
 	<key>CFBundleDisplayName</key>
-	<string>LivePhotoForge</string>
+	<string>VideoToLive</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,7 +27,7 @@
 	<key>NSSupportsAutomaticTermination</key>
 	<true/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>LivePhotoForge 需要把生成的 Live Photo 写入你的照片图库。</string>
+	<string>VideoToLive 需要把生成的 Live Photo 写入你的照片图库。</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.video</string>
 	<key>CFBundleDocumentTypes</key>

@@ -1,4 +1,4 @@
-import LivePhotoForgeCore
+import VideoToLiveCore
 import SwiftUI
 
 /// 底部时间轴区：播放与关键帧步进、起止时间、刻度尺、缩略图条与选区、提示。

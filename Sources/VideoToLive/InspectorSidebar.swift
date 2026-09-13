@@ -1,4 +1,4 @@
-import LivePhotoForgeCore
+import VideoToLiveCore
 import SwiftUI
 
 /// 右侧栏：封面 → 时长 → 视频信息。封面放最上面，它是用户最关心的结果。

@@ -2,21 +2,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "LivePhotoForge",
+    name: "VideoToLive",
     platforms: [.macOS(.v13)],
     products: [
-        .library(name: "LivePhotoForgeCore", targets: ["LivePhotoForgeCore"]),
-        .executable(name: "lpforge", targets: ["lpforge"]),
-        .executable(name: "LivePhotoForgeApp", targets: ["LivePhotoForgeApp"]),
+        .library(name: "VideoToLiveCore", targets: ["VideoToLiveCore"]),
+        .executable(name: "vtl", targets: ["vtl"]),
+        .executable(name: "VideoToLive", targets: ["VideoToLive"]),
     ],
     targets: [
         .target(
-            name: "LivePhotoForgeCore",
+            name: "VideoToLiveCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
-            name: "lpforge",
-            dependencies: ["LivePhotoForgeCore"],
+            name: "vtl",
+            dependencies: ["VideoToLiveCore"],
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 // Embed an Info.plist into the CLI binary so TCC can read
@@ -25,13 +25,13 @@ let package = Package(
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
-                    "-Xlinker", "Resources/lpforge-Info.plist",
+                    "-Xlinker", "Resources/vtl-Info.plist",
                 ])
             ]
         ),
         .executableTarget(
-            name: "LivePhotoForgeApp",
-            dependencies: ["LivePhotoForgeCore"],
+            name: "VideoToLive",
+            dependencies: ["VideoToLiveCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

@@ -1,6 +1,6 @@
 import AVFoundation
 import AppKit
-import LivePhotoForgeCore
+import VideoToLiveCore
 import SwiftUI
 
 /// 承载 AVPlayerLayer 的 NSView。SwiftUI 的 VideoPlayer 自带系统播放条，

@@ -30,7 +30,7 @@ public struct ConversionRequest: Sendable {
         keepAudio: Bool = true,
         preciseTrim: Bool = false,
         workDirectory: URL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LivePhotoForge", isDirectory: true),
+            .appendingPathComponent("VideoToLive", isDirectory: true),
         importToLibrary: Bool = true
     ) {
         self.sourceURL = sourceURL
@@ -61,7 +61,7 @@ public struct ConversionResult: Sendable {
 }
 
 /// 阶段一的全链路编排：解析 → 抽帧 → 编码封面 → 封装 → 写入图库。
-public enum LivePhotoForge {
+public enum LivePhotoConverter {
 
     public static func convert(
         _ request: ConversionRequest,

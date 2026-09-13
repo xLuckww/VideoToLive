@@ -250,7 +250,7 @@ public enum LivePhotoVideoWriter {
         range: CMTimeRange,
         progress: (@Sendable (Double) -> Void)?
     ) async throws {
-        let queue = DispatchQueue(label: "com.livephotoforge.pump.\(label)")
+        let queue = DispatchQueue(label: "com.xluckww.videotolive.pump.\(label)")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let finished = Finished()
             input.requestMediaDataWhenReady(on: queue) {

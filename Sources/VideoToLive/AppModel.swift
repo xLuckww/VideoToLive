@@ -2,7 +2,7 @@ import AVFoundation
 import AppKit
 import CoreMedia
 import Foundation
-import LivePhotoForgeCore
+import VideoToLiveCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -567,7 +567,7 @@ final class AppModel: ObservableObject {
 
         Task {
             do {
-                let produced = try await LivePhotoForge.convert(request) { stage, fraction in
+                let produced = try await LivePhotoConverter.convert(request) { stage, fraction in
                     Task { @MainActor in
                         self.stage = stage
                         self.stageProgress = fraction

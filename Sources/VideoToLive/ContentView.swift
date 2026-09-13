@@ -1,4 +1,4 @@
-import LivePhotoForgeCore
+import VideoToLiveCore
 import SwiftUI
 
 /// 窗口外壳：没有视频时整窗是拖放区；有视频时是「顶栏 + 预览/侧栏 + 时间轴」的剪辑布局。
@@ -89,7 +89,7 @@ struct EmptyStateView: View {
         VStack(spacing: 0) {
             ZStack {
                 WindowDragArea()
-                Text("LivePhotoForge")
+                Text("VideoToLive")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
                     .allowsHitTesting(false)
