@@ -4,32 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
-	<key>CFBundleExecutable</key>
-	<string>VideoToLive</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.xluckww.videotolive</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>VideoToLive</string>
 	<key>CFBundleDisplayName</key>
 	<string>VideoToLive</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
-	<key>CFBundleVersion</key>
-	<string>2</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSSupportsAutomaticTermination</key>
-	<true/>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>VideoToLive 需要把生成的 Live Photo 写入你的照片图库。</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.video</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -45,5 +21,31 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleExecutable</key>
+	<string>VideoToLive</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.xluckww.videotolive</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>VideoToLive</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.video</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>VideoToLive 需要把生成的 Live Photo 写入你的照片图库。</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<true/>
 </dict>
 </plist>

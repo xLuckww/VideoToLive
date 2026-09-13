@@ -5,3 +5,5 @@ out/
 testdata/
 out*/
 build/
+.build-universal/
+dist/
