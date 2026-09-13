@@ -7,9 +7,9 @@ struct LivePhotoForgeApp: App {
     var body: some Scene {
         WindowGroup("LivePhotoForge") {
             ContentView(model: model)
-                .frame(minWidth: 460, idealWidth: 520, minHeight: 520, idealHeight: 580)
+                .frame(minWidth: 520, idealWidth: 580, minHeight: 620, idealHeight: 820)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .newItem) {

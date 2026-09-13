@@ -98,6 +98,8 @@ struct TrimPanel: View {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .frame(width: 96, height: 62)
+                        .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 if model.isPickingCover {
@@ -105,6 +107,7 @@ struct TrimPanel: View {
                 }
             }
             .frame(width: 96, height: 62)
+            .clipped()
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.25)))
 
             Text(model.coverTime.map { String(format: "封面 %.2f s", $0) } ?? "封面")
@@ -134,11 +137,13 @@ struct TrimPanel: View {
                     .offset(x: startX + selectionWidth)
 
                 keyframeTicks(scale: scale)
+                playhead(scale: scale)
                 selectionBox(startX: startX, width: selectionWidth, scale: scale)
             }
             .frame(width: width, height: stripHeight)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
+            .coordinateSpace(name: Self.timelineSpace)
         }
         .frame(height: stripHeight)
     }
@@ -169,6 +174,16 @@ struct TrimPanel: View {
         }
     }
 
+    /// 播放头。播放时随画面移动，停着时就停在预览窗当前显示的那一帧。
+    private func playhead(scale: Double) -> some View {
+        Rectangle()
+            .fill(Color.white)
+            .frame(width: 2, height: stripHeight)
+            .shadow(color: .black.opacity(0.6), radius: 1)
+            .offset(x: model.playheadTime * scale)
+            .opacity(model.isPlaying ? 1 : 0.7)
+    }
+
     private func selectionBox(startX: Double, width selectionWidth: Double, scale: Double) -> some View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 4)
@@ -195,43 +210,35 @@ struct TrimPanel: View {
 
     // MARK: 手势
 
+    /// 手势坐标必须以整条时间轴为参照。
+    /// 选区框自己会跟着拖动移动，若用默认的 .local（以框自身为参照），
+    /// 框一动手势的位移读数就被抵消一截，框又被拉回去——表现为来回晃动、只跟一半速度。
+    private static let timelineSpace = "timeline"
+
     private func moveGesture(scale: Double) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.timelineSpace))
             .onChanged { value in
                 guard scale > 0 else { return }
-                let origin = model.dragOriginStart ?? model.selectionStart
-                model.dragOriginStart = origin
-                model.setStart(origin + value.translation.width / scale)
+                model.beginDrag(.move)
+                model.dragMove(by: value.translation.width / scale)
             }
-            .onEnded { _ in
-                model.dragOriginStart = nil
-                model.scheduleCoverPreview()
-            }
+            .onEnded { _ in model.endDrag() }
     }
 
     private func resizeGesture(scale: Double, isLeading: Bool) -> some Gesture {
-        DragGesture(minimumDistance: 1)
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.timelineSpace))
             .onChanged { value in
                 guard scale > 0 else { return }
-                let originStart = model.dragOriginStart ?? model.selectionStart
-                let originDuration = model.dragOriginDuration ?? model.selectionDuration
-                model.dragOriginStart = originStart
-                model.dragOriginDuration = originDuration
                 let delta = value.translation.width / scale
                 if isLeading {
-                    // 左把手：终点钉住，起点动
-                    let end = originStart + originDuration
-                    model.setStart(min(max(0, originStart + delta), end - 0.2))
-                    model.setDuration(end - model.selectionStart)
+                    model.beginDrag(.leading)
+                    model.dragLeading(by: delta)
                 } else {
-                    model.setDuration(originDuration + delta)
+                    model.beginDrag(.trailing)
+                    model.dragTrailing(by: delta)
                 }
             }
-            .onEnded { _ in
-                model.dragOriginStart = nil
-                model.dragOriginDuration = nil
-                model.scheduleCoverPreview()
-            }
+            .onEnded { _ in model.endDrag() }
     }
 
     // MARK: 控件与提示
@@ -239,18 +246,27 @@ struct TrimPanel: View {
     private var controls: some View {
         HStack(spacing: 8) {
             ForEach(model.availablePresets, id: \.self) { preset in
-                let active = model.isPresetActive(preset)
-                Button(preset == 1.5 ? "1.5s" : "\(Int(preset))s") {
-                    model.applyPreset(preset)
-                }
-                .buttonStyle(.bordered)
-                .tint(active ? .accentColor : nil)
-                .foregroundStyle(active ? Color.accentColor : Color.primary)
+                presetButton(preset)
             }
             Spacer()
             Toggle("精确裁剪", isOn: $model.preciseTrim)
                 .toggleStyle(.checkbox)
                 .help("关闭吸附，从任意帧切开。代价是视频轨要重新编码，画质会有损失。")
+        }
+    }
+
+    /// 选中的预设用实心蓝按钮。`.bordered` 只改 tint 在 macOS 上视觉差异太弱，
+    /// 用户会以为点了没反应。
+    @ViewBuilder
+    private func presetButton(_ preset: Double) -> some View {
+        let title = preset == 1.5 ? "1.5s" : "\(Int(preset))s"
+        if model.isPresetActive(preset) {
+            Button(title) { model.applyPreset(preset) }
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+        } else {
+            Button(title) { model.applyPreset(preset) }
+                .buttonStyle(.bordered)
         }
     }
 

@@ -22,6 +22,7 @@ struct ContentView: View {
                             InfoCard(info: info)
                         }
                         if model.info != nil, model.phase != .converting {
+                            PreviewMonitor(model: model)
                             TrimPanel(model: model)
                         }
                         if model.phase == .converting {

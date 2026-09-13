@@ -49,6 +49,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: 预览播放器
+
+    /// 预览窗跟随哪一端。调终点时看终点更有用。
+    enum PreviewAnchor { case start, end }
+
+    @Published private(set) var player: AVPlayer?
+    @Published private(set) var isPlaying = false
+    @Published private(set) var playheadTime: Double = 0
+    @Published private(set) var previewAnchor: PreviewAnchor = .start
+
+    private var timeObserver: Any?
+
     // MARK: 封面预览
 
     @Published private(set) var coverPreview: NSImage?
@@ -57,6 +69,11 @@ final class AppModel: ObservableObject {
 
     static let supportedExtensions: Set<String> = ["mp4", "mov", "m4v"]
     static let durationPresets: [Double] = [1.5, 3, 5, 10]
+
+    /// 拖拽中。这期间要关掉输入框回写、封面重算和精确 seek——
+    /// 否则每个拖拽事件都会触发一串连锁反应，表现为选区抖动、拖不动。
+    private(set) var isDragging = false
+    private var lastSeekAt: CFAbsoluteTime = 0
 
     /// 拖拽起始快照。不驱动重绘，所以不加 @Published。
     /// （@State 在 macOS 27 SDK 里是宏，其插件只随完整 Xcode 分发。）
@@ -99,6 +116,7 @@ final class AppModel: ObservableObject {
     func load(_ url: URL) {
         coverTask?.cancel()
         timelineTask?.cancel()
+        teardownPlayer()
         phase = .inspecting
         info = nil
         result = nil
@@ -118,6 +136,7 @@ final class AppModel: ObservableObject {
                 )
                 self.asset = loaded
                 self.info = inspected
+                self.makePlayer(for: loaded)
                 self.selectionDuration = min(3, inspected.durationSeconds)
                 self.selectionStart = 0
                 self.syncFields()
@@ -137,6 +156,7 @@ final class AppModel: ObservableObject {
     func reset() {
         coverTask?.cancel()
         timelineTask?.cancel()
+        teardownPlayer()
         phase = .empty
         info = nil
         asset = nil
@@ -190,6 +210,161 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - 拖拽
+
+    /// 拖的是选区的哪一部分。松手吸附时三者规则不同。
+    enum DragKind { case move, leading, trailing }
+    private var dragKind: DragKind = .move
+
+    /// 拖动过程中选区跟手、不吸附；松手时再吸附到关键帧。
+    /// 边拖边吸附会让选区按关键帧间隔一格一格跳（0.95s 间隔的素材上约 7pt 一格），
+    /// 手感像卡顿。
+    func beginDrag(_ kind: DragKind) {
+        guard !isDragging else { return }
+        isDragging = true
+        dragKind = kind
+        dragOriginStart = selectionStart
+        dragOriginDuration = selectionDuration
+        if isPlaying { stopPlayback() }
+    }
+
+    /// 整体平移：时长不变。
+    func dragMove(by deltaSeconds: Double) {
+        guard isDragging, let originStart = dragOriginStart else { return }
+        selectionStart = min(max(0, originStart + deltaSeconds), startCeiling)
+        previewAnchor = .start
+        seekPreview(to: selectionStart)
+    }
+
+    /// 左把手：终点钉住，起点动，时长随之变化。
+    func dragLeading(by deltaSeconds: Double) {
+        guard isDragging, let originStart = dragOriginStart,
+              let originDuration = dragOriginDuration else { return }
+        let end = min(originStart + originDuration, maxDuration)
+        let start = min(max(0, originStart + deltaSeconds), end - 0.2)
+        selectionStart = start
+        selectionDuration = end - start
+        previewAnchor = .start
+        seekPreview(to: selectionStart)
+    }
+
+    /// 右把手：起点钉住，终点动。
+    func dragTrailing(by deltaSeconds: Double) {
+        guard isDragging, let originDuration = dragOriginDuration else { return }
+        let upper = max(0.2, maxDuration - selectionStart)
+        selectionDuration = min(max(0.2, originDuration + deltaSeconds), upper)
+        previewAnchor = .end
+        seekPreview(to: selectionEnd)
+    }
+
+    /// 松手：先吸附，再把拖动期间省掉的活一次性补上。
+    func endDrag() {
+        guard isDragging else { return }
+        isDragging = false
+        dragOriginStart = nil
+        dragOriginDuration = nil
+
+        if !preciseTrim {
+            switch dragKind {
+            case .move:
+                // 平移：起点吸附，时长保持。
+                selectionStart = snap(selectionStart)
+            case .leading:
+                // 左把手：起点吸附，终点仍钉在原处，所以时长会稍微变长。
+                let end = selectionEnd
+                selectionStart = snap(selectionStart)
+                selectionDuration = end - selectionStart
+            case .trailing:
+                // 右把手：起点没动过，本来就在关键帧上。
+                break
+            }
+        }
+
+        syncFields()
+        refreshRangeHint()
+        seekPreview(to: previewAnchor == .end ? selectionEnd : selectionStart, precise: true)
+        scheduleCoverPreview()
+    }
+
+    // MARK: - 预览播放器
+
+    private func makePlayer(for asset: AVURLAsset) {
+        teardownPlayer()
+        let item = AVPlayerItem(asset: asset)
+        let created = AVPlayer(playerItem: item)
+        created.actionAtItemEnd = .pause
+        created.isMuted = false
+        player = created
+        playheadTime = selectionStart
+
+        // 20Hz 足够驱动播放头，又不至于每秒开几十个 Task。
+        timeObserver = created.addPeriodicTimeObserver(
+            forInterval: CMTime(value: 1, timescale: 20), queue: .main
+        ) { [weak self] time in
+            Task { @MainActor in self?.onPlayheadTick(time.seconds) }
+        }
+        seekPreview(to: selectionStart, precise: true)
+    }
+
+    private func teardownPlayer() {
+        if let timeObserver, let player {
+            player.removeTimeObserver(timeObserver)
+        }
+        timeObserver = nil
+        player?.pause()
+        player = nil
+        isPlaying = false
+        playheadTime = 0
+    }
+
+    private func onPlayheadTick(_ seconds: Double) {
+        guard seconds.isFinite else { return }
+        playheadTime = seconds
+        // 播到选段末尾就停下，回到起点——预览的是这一段，不是整条片子。
+        if isPlaying, seconds >= selectionEnd - 0.02 {
+            stopPlayback()
+        }
+    }
+
+    /// 拖动时用一帧的容差换流畅，松手后再精确定位。
+    /// 4K 素材上零容差 seek 很贵，拖拽期间还要限流到 ~8 次/秒，
+    /// 否则每个鼠标事件都排一次 seek，画面和选区都会卡。
+    func seekPreview(to seconds: Double, precise: Bool = false) {
+        guard let player else { return }
+        if isDragging && !precise {
+            let now = CFAbsoluteTimeGetCurrent()
+            guard now - lastSeekAt > 0.12 else { return }
+            lastSeekAt = now
+        }
+        let target = CMTime(seconds: max(0, min(seconds, maxDuration)), preferredTimescale: 600)
+        let tolerance = precise ? CMTime.zero : CMTime(value: 1, timescale: 15)
+        player.seek(to: target, toleranceBefore: tolerance, toleranceAfter: tolerance)
+        if !isPlaying { playheadTime = target.seconds }
+    }
+
+    func togglePlaySelection() {
+        guard let player else { return }
+        if isPlaying {
+            stopPlayback()
+        } else {
+            previewAnchor = .start
+            player.seek(to: CMTime(seconds: selectionStart, preferredTimescale: 600),
+                        toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, let player = self.player else { return }
+                    player.play()
+                    self.isPlaying = true
+                }
+            }
+        }
+    }
+
+    private func stopPlayback() {
+        player?.pause()
+        isPlaying = false
+        seekPreview(to: previewAnchor == .end ? selectionEnd : selectionStart, precise: true)
+    }
+
     // MARK: - 选区编辑
 
     /// 起点吸附到最近的前一个关键帧。
@@ -202,20 +377,29 @@ final class AppModel: ObservableObject {
 
     func setStart(_ seconds: Double, commit: Bool = false, skipSync: InputField? = nil) {
         selectionStart = snap(min(max(0, seconds), startCeiling))
-        syncFields(skip: skipSync)
-        if commit { scheduleCoverPreview() }
+        // 拖拽期间不回写输入框：回写会触发 TextField 的 onChange，
+        // onChange 又调回 setStart，形成反馈回路——这正是「选区不停晃动」的原因。
+        if !isDragging { syncFields(skip: skipSync) }
+        if isPlaying { stopPlayback() }
+        previewAnchor = .start
+        seekPreview(to: selectionStart, precise: commit && !isDragging)
+        if commit && !isDragging { scheduleCoverPreview() }
     }
 
-    func setDuration(_ seconds: Double, commit: Bool = false) {
+    /// `anchor` 说明这次改动是冲着哪一端来的，预览窗跟着跳到那一端。
+    func setDuration(_ seconds: Double, commit: Bool = false, anchor: PreviewAnchor = .end) {
         let upper = max(0.2, maxDuration - selectionStart)
         selectionDuration = min(max(0.2, seconds), upper)
-        syncFields()
-        if commit { scheduleCoverPreview() }
+        if !isDragging { syncFields() }
+        if isPlaying { stopPlayback() }
+        previewAnchor = anchor
+        seekPreview(to: anchor == .end ? selectionEnd : selectionStart, precise: commit && !isDragging)
+        if commit && !isDragging { scheduleCoverPreview() }
     }
 
     /// 点预设只是把时长设过去，按钮随之高亮；把手照样能拖。
     func applyPreset(_ seconds: Double) {
-        setDuration(seconds)
+        setDuration(seconds, anchor: .start)
         // 时长变长可能把选区顶出视频尾部，起点跟着回退。
         setStart(selectionStart, commit: true)
         refreshRangeHint()
@@ -283,6 +467,8 @@ final class AppModel: ObservableObject {
         inputError = nil
         let clamped = min(max(selectionDuration, requested), maxDuration)
         setStart(clamped - selectionDuration, commit: true, skipSync: .end)
+        previewAnchor = .end
+        seekPreview(to: selectionEnd, precise: true)
         refreshRangeHint(typedEnd: requested)
     }
 
