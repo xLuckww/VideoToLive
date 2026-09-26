@@ -22,7 +22,7 @@ vtl — VideoToLive 命令行工具
       --duration <秒>     裁剪时长，默认 3
       --out <目录>        产物输出目录，默认临时目录
       --format heic|jpeg  封面格式，默认 heic
-      --quality <0-1>     封面质量，默认 1.0
+      --quality <0-1>     封面质量，默认 1.0（HEIC 上限 0.99，避免 iPhone 无法解码）
       --no-audio          丢弃音轨
       --precise           精确裁剪（退回重编码，画质有损）
       --no-import         只产出文件，不写入照片图库

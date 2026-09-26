@@ -10,6 +10,11 @@ public enum CoverImageFormat: String, Sendable, CaseIterable {
 
     var utType: UTType { self == .heic ? .heic : .jpeg }
     var fileExtension: String { self == .heic ? "heic" : "jpg" }
+
+    /// HEIC 质量一旦取到 1.0，ImageIO 会改用 4:4:4 的 HEVC Range Extensions 编码。
+    /// Mac 能软解，但 iPhone 解不了，iCloud 同步后提示「加载此照片的更高质量版本时出错」，
+    /// 只能播放低清的预览版本。0.99 仍是标准 4:2:0 Main / Main 10。
+    var maxQuality: Double { self == .heic ? 0.99 : 1.0 }
 }
 
 public struct CoverFrame: Sendable {
@@ -96,7 +101,7 @@ public enum CoverFrameExtractor {
         }
 
         let properties: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: max(0.0, min(1.0, quality)),
+            kCGImageDestinationLossyCompressionQuality: max(0.0, min(format.maxQuality, quality)),
             kCGImagePropertyMakerAppleDictionary: [
                 AppleMakerNote.assetIdentifierKey: identity.value
             ] as CFDictionary,
