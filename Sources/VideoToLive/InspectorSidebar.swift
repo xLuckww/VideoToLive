@@ -120,7 +120,7 @@ struct InspectorSidebar: View {
                     }
                     .padding(.top, 4)
                 }
-                if case .reencode(let reason) = info.mode {
+                if let reason = info.mode.reason {
                     Text(reason)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.warning)

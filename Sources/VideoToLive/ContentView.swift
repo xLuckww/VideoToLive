@@ -56,9 +56,9 @@ struct TopBar: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if info.mode.isPassthrough {
-                        Pill(text: "无损直通")
+                        Pill(text: info.mode.badge)
                     } else {
-                        Pill(text: "需重编码", foreground: Theme.warning, background: Theme.warningSoft)
+                        Pill(text: info.mode.badge, foreground: Theme.warning, background: Theme.warningSoft)
                     }
                 }
                 Spacer(minLength: 16)
