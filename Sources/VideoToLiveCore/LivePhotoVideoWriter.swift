@@ -9,8 +9,6 @@ public struct RemuxResult: Sendable {
     public let actualStart: CMTime
     public let actualEnd: CMTime
     public let didPassthrough: Bool
-    /// 原生竖屏素材被转成了横屏存储加旋转标记（这种情况下必然重编码）。
-    public let rotatedToLandscape: Bool
     public let outputSize: Int64
     public let wroteAudio: Bool
 }
@@ -50,9 +48,6 @@ public struct RemuxRequest: Sendable {
 /// 关键约定（方案 5.2）：两端 `outputSettings` 均为 nil 时走 passthrough，
 /// 样本原样搬运，不解码不重编码。绝不使用 AVAssetExportSession——它不给写
 /// 自定义定时元数据轨的口子。
-///
-/// 例外：原生竖屏存储的素材在 iPhone 上播放实况会发糊，必须转成横屏存储加
-/// 旋转标记，这只能重编码，见 `VideoInspector.needsLandscapeStorage`。
 public enum LivePhotoVideoWriter {
 
     public static func remux(
@@ -70,18 +65,10 @@ public enum LivePhotoVideoWriter {
             ? try await asset.loadTracks(withMediaType: .audio).first
             : nil
 
-        let (codedSize, sourceTransform) = try await videoTrack.load(.naturalSize, .preferredTransform)
-        let rotateToLandscape = VideoInspector.needsLandscapeStorage(
-            codedSize: codedSize, transform: sourceTransform
-        )
-        // 吸附只跟「精确裁剪」挂钩，必须和 LivePhotoConverter 里算区间的条件一致。
-        // 竖屏重编码仍然吸附：区间由编排层统一算好，这里不能另起一套。
-        let snapToKeyframe = !request.preciseTrim
-        let passthrough = snapToKeyframe && !rotateToLandscape
-        let audioPassthrough = snapToKeyframe
+        let passthrough = !request.preciseTrim
         let start: CMTime
         var end = request.timeRange.end
-        if snapToKeyframe {
+        if passthrough {
             start = try await KeyframeIndex.snapToPrecedingKeyframe(
                 track: videoTrack, time: request.timeRange.start
             )
@@ -113,8 +100,7 @@ public enum LivePhotoVideoWriter {
         reader.timeRange = readRange
 
         // outputSettings 传 nil —— passthrough 的一半。
-        let plan: ReencodePlan? = passthrough
-            ? nil : try await reencodePlan(for: videoTrack, rotate: rotateToLandscape)
+        let plan: ReencodePlan? = passthrough ? nil : try await reencodePlan(for: videoTrack)
         let videoOutputSettings: [String: Any]? = plan.map {
             [kCVPixelBufferPixelFormatTypeKey as String: $0.pixelFormat]
         }
@@ -127,7 +113,7 @@ public enum LivePhotoVideoWriter {
 
         var audioOutput: AVAssetReaderTrackOutput?
         if let audioTrack {
-            let settings: [String: Any]? = audioPassthrough ? nil : [
+            let settings: [String: Any]? = passthrough ? nil : [
                 AVFormatIDKey: kAudioFormatLinearPCM
             ]
             let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: settings)
@@ -148,29 +134,19 @@ public enum LivePhotoVideoWriter {
 
         let videoFormat = try await videoTrack.load(.formatDescriptions).first
         let videoInput: AVAssetWriterInput
-        var pixelAdaptor: AVAssetWriterInputPixelBufferAdaptor?
-        if let plan {
-            videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: plan.outputSettings)
-            pixelAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: videoInput,
-                sourcePixelBufferAttributes: [
-                    kCVPixelBufferPixelFormatTypeKey as String: plan.pixelFormat,
-                    kCVPixelBufferWidthKey as String: plan.width,
-                    kCVPixelBufferHeightKey as String: plan.height,
-                    kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
-                ]
+        if passthrough {
+            videoInput = AVAssetWriterInput(
+                mediaType: .video, outputSettings: nil, sourceFormatHint: videoFormat
             )
         } else {
             videoInput = AVAssetWriterInput(
-                mediaType: .video, outputSettings: nil, sourceFormatHint: videoFormat
+                mediaType: .video,
+                outputSettings: plan!.outputSettings
             )
         }
         videoInput.expectsMediaDataInRealTime = false
         // 旋转信息不能丢，否则竖屏素材转出来是横的。
-        videoInput.transform = rotateToLandscape
-            ? landscapeStorageTransform(storedSize: CGSize(width: plan!.width, height: plan!.height),
-                                        source: sourceTransform)
-            : sourceTransform
+        videoInput.transform = try await videoTrack.load(.preferredTransform)
         guard writer.canAdd(videoInput) else {
             throw LivePhotoError(.remux, "AVAssetWriter 拒绝视频输入")
         }
@@ -180,7 +156,7 @@ public enum LivePhotoVideoWriter {
         if let audioTrack, audioOutput != nil {
             let format = try await audioTrack.load(.formatDescriptions).first
             let input: AVAssetWriterInput
-            if audioPassthrough {
+            if passthrough {
                 input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil, sourceFormatHint: format)
             } else {
                 input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
@@ -229,32 +205,22 @@ public enum LivePhotoVideoWriter {
             throw LivePhotoError(.remux, "AVAssetReader 启动失败", underlying: reader.error)
         }
 
-        let rotator = rotateToLandscape ? try makeRotator() : nil
+        var pumps: [(AVAssetWriterInput, AVAssetReaderTrackOutput, String)] = [
+            (videoInput, videoOutput, "video")
+        ]
+        if let audioInput, let audioOutput { pumps.append((audioInput, audioOutput, "audio")) }
+
         try await withThrowingTaskGroup(of: Void.self) { taskGroup in
-            taskGroup.addTask {
-                if let pixelAdaptor {
-                    try await pumpFrames(
-                        adaptor: pixelAdaptor, output: videoOutput, rotator: rotator,
-                        range: readRange, progress: progress
-                    )
-                } else {
-                    try await pump(
-                        input: videoInput, output: videoOutput, label: "video",
-                        range: readRange, progress: progress
-                    )
-                }
-            }
-            if let audioInput, let audioOutput {
+            for (input, output, label) in pumps {
                 taskGroup.addTask {
                     try await pump(
-                        input: audioInput, output: audioOutput, label: "audio",
-                        range: readRange, progress: nil
+                        input: input, output: output, label: label,
+                        range: readRange, progress: label == "video" ? progress : nil
                     )
                 }
             }
             try await taskGroup.waitForAll()
         }
-        if let rotator { VTPixelRotationSessionInvalidate(rotator) }
 
         if reader.status == .failed {
             writer.cancelWriting()
@@ -262,8 +228,6 @@ public enum LivePhotoVideoWriter {
         }
         reader.cancelReading()
 
-        // 逐帧追加的像素没有时长，不收尾的话最后一帧会被截掉，成品比区间短一帧。
-        if !passthrough { writer.endSession(atSourceTime: end) }
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw LivePhotoError(.remux, "封装未完成（status=\(writer.status.rawValue)）", underlying: writer.error)
@@ -277,7 +241,6 @@ public enum LivePhotoVideoWriter {
             actualStart: start,
             actualEnd: end,
             didPassthrough: passthrough,
-            rotatedToLandscape: rotateToLandscape,
             outputSize: size,
             wroteAudio: audioInput != nil
         )
@@ -319,84 +282,6 @@ public enum LivePhotoVideoWriter {
                 }
             }
         }
-    }
-
-    /// 重编码路径：解码后的帧按需旋转，再交给编码器。
-    private static func pumpFrames(
-        adaptor: AVAssetWriterInputPixelBufferAdaptor,
-        output: AVAssetReaderTrackOutput,
-        rotator: VTPixelRotationSession?,
-        range: CMTimeRange,
-        progress: (@Sendable (Double) -> Void)?
-    ) async throws {
-        let input = adaptor.assetWriterInput
-        let queue = DispatchQueue(label: "com.xluckww.videotolive.pump.frames")
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let finished = Finished()
-            func fail(_ message: String) {
-                input.markAsFinished()
-                if finished.trySet() {
-                    continuation.resume(throwing: LivePhotoError(.remux, message))
-                }
-            }
-            input.requestMediaDataWhenReady(on: queue) {
-                while input.isReadyForMoreMediaData {
-                    guard let sample = output.copyNextSampleBuffer() else {
-                        input.markAsFinished()
-                        if finished.trySet() { continuation.resume() }
-                        return
-                    }
-                    // 解码器偶尔会吐出不带图像的样本（比如只携带标记），跳过即可。
-                    guard let source = CMSampleBufferGetImageBuffer(sample) else { continue }
-                    let pts = CMSampleBufferGetPresentationTimeStamp(sample)
-
-                    var frame = source
-                    if let rotator {
-                        guard let pool = adaptor.pixelBufferPool else {
-                            return fail("编码器没有提供像素缓冲池")
-                        }
-                        var rotated: CVPixelBuffer?
-                        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &rotated)
-                        guard let rotated,
-                              VTPixelRotationSessionRotateImage(rotator, source, rotated) == noErr
-                        else { return fail("旋转视频帧失败") }
-                        // 色彩空间等附加信息跟着帧走，丢了会偏色。
-                        CVBufferPropagateAttachments(source, rotated)
-                        frame = rotated
-                    }
-
-                    if let progress, range.duration.seconds > 0 {
-                        let done = (pts - range.start).seconds / range.duration.seconds
-                        progress(max(0, min(1, done)))
-                    }
-                    if !adaptor.append(frame, withPresentationTime: pts) {
-                        return fail("追加视频帧失败，写入器已进入错误状态")
-                    }
-                }
-            }
-        }
-    }
-
-    /// 顺时针转 90°：竖屏画面存成横屏，显示时再由旋转标记转回来。
-    private static func makeRotator() throws -> VTPixelRotationSession {
-        var session: VTPixelRotationSession?
-        guard VTPixelRotationSessionCreate(nil, &session) == noErr,
-              let session else {
-            throw LivePhotoError(.remux, "无法创建视频帧旋转会话")
-        }
-        VTSessionSetProperty(session, key: kVTPixelRotationPropertyKey_Rotation, value: kVTRotation_CW90)
-        return session
-    }
-
-    /// 横屏存储的帧要逆时针转 90° 才是原来的竖屏画面，再叠加源文件原有的变换
-    /// （比如倒置拍摄的 180°）。平移量按变换后的包围盒归零，让画面落在正象限。
-    static func landscapeStorageTransform(storedSize: CGSize, source: CGAffineTransform) -> CGAffineTransform {
-        let back = CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: storedSize.width)
-        var transform = back.concatenating(source)
-        let box = CGRect(origin: .zero, size: storedSize).applying(transform)
-        transform.tx -= box.minX
-        transform.ty -= box.minY
-        return transform
     }
 
     /// continuation 只能 resume 一次，用它兜住回调重入。
@@ -450,20 +335,18 @@ public enum LivePhotoVideoWriter {
         return input
     }
 
-    // MARK: - 重编码路径（精确裁剪或原生竖屏素材才走）
+    // MARK: - 重编码路径（精确裁剪时才走）
 
     private struct ReencodePlan {
         let pixelFormat: OSType
-        let width: Int
-        let height: Int
         let outputSettings: [String: Any]
     }
 
-    /// 尽量贴着源走：10-bit 源用 10-bit 解码和 Main 10 编码，码率不低于源，
-    /// 色彩标记照抄。竖屏转横屏存储时宽高互换。
-    private static func reencodePlan(for track: AVAssetTrack, rotate: Bool) async throws -> ReencodePlan {
-        let (size, rate, fps, descriptions) = try await track.load(
-            .naturalSize, .estimatedDataRate, .nominalFrameRate, .formatDescriptions
+    /// 尽量贴着源走：10-bit 源用 10-bit 解码和 Main 10 编码，不再被压成 8-bit；
+    /// 码率不低于源，色彩标记照抄。
+    private static func reencodePlan(for track: AVAssetTrack) async throws -> ReencodePlan {
+        let (size, rate, descriptions) = try await track.load(
+            .naturalSize, .estimatedDataRate, .formatDescriptions
         )
         let description = descriptions.first
         let bits = description.flatMap {
@@ -471,24 +354,16 @@ public enum LivePhotoVideoWriter {
         } as? NSNumber
         let tenBit = (bits?.intValue ?? 8) > 8
 
-        let codedWidth = Int(abs(size.width)), codedHeight = Int(abs(size.height))
-        let (width, height) = rotate ? (codedHeight, codedWidth) : (codedWidth, codedHeight)
-
-        var compression: [String: Any] = [
-            AVVideoAverageBitRateKey: Int(max(rate, 8_000_000)),
-            AVVideoProfileLevelKey: tenBit
-                ? kVTProfileLevel_HEVC_Main10_AutoLevel as String
-                : kVTProfileLevel_HEVC_Main_AutoLevel as String,
-        ]
-        if fps > 0 {
-            compression[AVVideoExpectedSourceFrameRateKey] = Int(fps.rounded())
-            compression[AVVideoMaxKeyFrameIntervalKey] = Int(fps.rounded())
-        }
         var settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: width,
-            AVVideoHeightKey: height,
-            AVVideoCompressionPropertiesKey: compression,
+            AVVideoWidthKey: Int(abs(size.width)),
+            AVVideoHeightKey: Int(abs(size.height)),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: Int(max(rate, 8_000_000)),
+                AVVideoProfileLevelKey: tenBit
+                    ? kVTProfileLevel_HEVC_Main10_AutoLevel as String
+                    : kVTProfileLevel_HEVC_Main_AutoLevel as String,
+            ],
         ]
         if let description,
            let primaries = CMFormatDescriptionGetExtension(
@@ -503,13 +378,10 @@ public enum LivePhotoVideoWriter {
                 AVVideoYCbCrMatrixKey: matrix,
             ]
         }
-
         return ReencodePlan(
             pixelFormat: tenBit
                 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
                 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            width: width,
-            height: height,
             outputSettings: settings
         )
     }

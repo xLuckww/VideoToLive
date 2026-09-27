@@ -176,13 +176,12 @@ func runConvert(_ args: Args) async throws {
     identifier   \(result.identity.value)
     源文件       \(result.info.url.lastPathComponent)  \(result.info.videoCodec)  \
     \(Int(result.info.naturalSize.width))×\(Int(result.info.naturalSize.height))
-    转换模式     \(result.remux.didPassthrough ? "无损直通（未重编码）"
-        : result.remux.rotatedToLandscape ? "竖屏重编码（转为横屏存储 + 旋转标记）" : "重编码")
+    转换模式     \(result.remux.didPassthrough ? "无损直通（未重编码）" : "重编码")
     """)
     print(String(format: "裁剪区间     %.3f s → %.3f s（请求起点 %.3f s）",
                  result.remux.actualStart.seconds, result.remux.actualEnd.seconds,
                  request.start.seconds))
-    if !request.preciseTrim {
+    if result.remux.didPassthrough {
         let drift = result.remux.actualStart.seconds - request.start.seconds
         if abs(drift) > 0.001 {
             print(String(format: "             起点被吸附到关键帧，前移了 %.3f s", -drift))

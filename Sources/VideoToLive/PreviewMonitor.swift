@@ -166,8 +166,7 @@ struct ResultBanner: View {
                             AppModel.timecode(result.remux.actualStart.seconds),
                             AppModel.timecode(result.remux.actualEnd.seconds),
                             Double(result.totalSize) / 1_048_576,
-                            result.remux.didPassthrough ? "视频轨未重编码"
-                                : result.remux.rotatedToLandscape ? "竖屏已重编码" : "已重编码"))
+                            result.remux.didPassthrough ? "视频轨未重编码" : "已重编码"))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textSecondary)
             }

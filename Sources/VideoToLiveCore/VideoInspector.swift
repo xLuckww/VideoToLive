@@ -29,7 +29,7 @@ public struct VideoInfo: Sendable {
             String(format: "文件大小  %.2f MB", Double(fileSize) / 1_048_576),
             "转换模式  \(mode.badge)",
         ]
-        if let why = mode.reason { lines.append("重编码原因 \(why)") }
+        if case .reencode(let why) = mode { lines.append("重编码原因 \(why)") }
         return lines.joined(separator: "\n")
     }
 }
@@ -38,25 +38,11 @@ public struct VideoInfo: Sendable {
 public enum ConversionMode: Sendable, Equatable {
     case passthrough              // 无损直通
     case reencode(reason: String) // 需重编码
-    /// 编码格式能直通，但画面是原生竖屏存储（编码尺寸高大于宽、没有旋转标记）。
-    /// 这样的实况在 iPhone 上播放会发糊，而 iPhone 自己拍的竖屏实况是横屏存储
-    /// 加 90° 旋转标记。改存储方向只能重编码。
-    case portraitReencode
 
     public var badge: String {
         switch self {
-        case .passthrough:      return "无损直通"
-        case .reencode:         return "需重编码"
-        case .portraitReencode: return "竖屏重编码"
-        }
-    }
-
-    public var reason: String? {
-        switch self {
-        case .passthrough:             return nil
-        case .reencode(let reason):    return reason
-        case .portraitReencode:
-            return "原生竖屏存储的视频在 iPhone 上播放实况会发糊，将转为横屏存储加旋转标记，视频会以原位深、帧率和码率重新编码"
+        case .passthrough: return "无损直通"
+        case .reencode:    return "需重编码"
         }
     }
 
@@ -112,8 +98,7 @@ public enum VideoInspector {
 
         let mode: ConversionMode
         if let videoCodecType, passthroughVideoCodecs.contains(videoCodecType) {
-            mode = needsLandscapeStorage(codedSize: size, transform: transform)
-                ? .portraitReencode : .passthrough
+            mode = .passthrough
         } else {
             let name = videoCodecType.map(fourCC) ?? "未知"
             mode = .reencode(reason: "视频编码 \(name) 不能原样封进 MOV 容器")
@@ -134,13 +119,6 @@ public enum VideoInspector {
             preferredTransform: transform,
             mode: mode
         )
-    }
-
-    /// 原生竖屏存储：编码尺寸高大于宽，且变换里没有 90° 旋转。
-    /// iPhone 拍的竖屏是横屏存储加旋转标记，不算在内。
-    public static func needsLandscapeStorage(codedSize: CGSize, transform: CGAffineTransform) -> Bool {
-        let rotated90 = abs(transform.b) > 0.5 || abs(transform.c) > 0.5
-        return !rotated90 && abs(codedSize.height) > abs(codedSize.width)
     }
 
     private static func codecType(of track: AVAssetTrack) async throws -> FourCharCode? {
