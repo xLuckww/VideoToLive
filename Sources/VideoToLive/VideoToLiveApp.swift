@@ -21,6 +21,12 @@ struct VideoToLiveApp: App {
                 Button("打开视频…") { model.presentOpenPanel() }
                     .keyboardShortcut("o")
             }
+            CommandGroup(after: .sidebar) {
+                Button(model.showsSidePanel ? "隐藏队列与历史" : "显示队列与历史") {
+                    model.showsSidePanel.toggle()
+                }
+                .keyboardShortcut("s", modifiers: [.control, .command])
+            }
         }
     }
 }

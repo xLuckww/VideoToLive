@@ -210,16 +210,28 @@ public enum LivePhotoVideoWriter {
         ]
         if let audioInput, let audioOutput { pumps.append((audioInput, audioOutput, "audio")) }
 
-        try await withThrowingTaskGroup(of: Void.self) { taskGroup in
-            for (input, output, label) in pumps {
-                taskGroup.addTask {
-                    try await pump(
-                        input: input, output: output, label: label,
-                        range: readRange, progress: label == "video" ? progress : nil
-                    )
+        // 取消时停掉读取端：copyNextSampleBuffer 随即返回 nil，各路搬运自然收尾。
+        let cancelReader = ReaderCanceller(reader)
+        try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: Void.self) { taskGroup in
+                for (input, output, label) in pumps {
+                    taskGroup.addTask {
+                        try await pump(
+                            input: input, output: output, label: label,
+                            range: readRange, progress: label == "video" ? progress : nil
+                        )
+                    }
                 }
+                try await taskGroup.waitForAll()
             }
-            try await taskGroup.waitForAll()
+        } onCancel: {
+            cancelReader.cancel()
+        }
+
+        if Task.isCancelled {
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: request.outputURL)
+            throw CancellationError()
         }
 
         if reader.status == .failed {
@@ -282,6 +294,13 @@ public enum LivePhotoVideoWriter {
                 }
             }
         }
+    }
+
+    /// 取消回调在任意线程触发，把 reader 包一层才能交给它。
+    private final class ReaderCanceller: @unchecked Sendable {
+        private let reader: AVAssetReader
+        init(_ reader: AVAssetReader) { self.reader = reader }
+        func cancel() { reader.cancelReading() }
     }
 
     /// continuation 只能 resume 一次，用它兜住回调重入。

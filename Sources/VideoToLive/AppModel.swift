@@ -25,6 +25,21 @@ final class AppModel: ObservableObject {
     @Published private(set) var failure: LivePhotoError?
     @Published var isTargeted = false
 
+    // MARK: 队列与历史
+
+    enum SidePanelTab { case queue, history }
+
+    let history: HistoryStore
+    let queue: BatchQueue
+    @Published var showsSidePanel = true
+    @Published var sidePanelTab: SidePanelTab = .queue
+
+    init() {
+        let history = HistoryStore()
+        self.history = history
+        self.queue = BatchQueue(history: history)
+    }
+
     // MARK: 裁剪
 
     @Published private(set) var selectionStart: Double = 0
@@ -103,15 +118,30 @@ final class AppModel: ObservableObject {
 
     // MARK: - 导入
 
+    /// 一个文件进编辑器；多个文件直接按默认区间进批量队列。
     func accept(urls: [URL]) {
-        guard let url = urls.first(where: {
-            Self.supportedExtensions.contains($0.pathExtension.lowercased())
-        }) else {
+        let videos = urls.filter { Self.supportedExtensions.contains($0.pathExtension.lowercased()) }
+        guard !videos.isEmpty else {
             failure = LivePhotoError(.inspect, "只支持 MP4 / MOV / M4V 格式")
             phase = .failed
             return
         }
-        load(url)
+        if videos.count == 1 {
+            load(videos[0])
+        } else {
+            queue.add(urls: videos)
+            showsSidePanel = true
+            sidePanelTab = .queue
+        }
+    }
+
+    /// 编辑器里调好的区间原样入队，不打断当前编辑。
+    func addCurrentToQueue() {
+        guard let info else { return }
+        queue.add(url: info.url, start: selectionStart, duration: selectionDuration,
+                  preciseTrim: preciseTrim)
+        showsSidePanel = true
+        sidePanelTab = .queue
     }
 
     func load(_ url: URL) {
@@ -573,13 +603,13 @@ final class AppModel: ObservableObject {
                         self.stageProgress = fraction
                     }
                 }
+                self.history.append(HistoryRecord(origin: .single, request: request, result: produced))
                 self.result = produced
                 self.phase = .finished
-            } catch let error as LivePhotoError {
-                self.failure = error
-                self.phase = .failed
             } catch {
-                self.failure = LivePhotoError(.remux, "生成失败", underlying: error)
+                self.history.append(HistoryRecord(origin: .single, request: request, error: error))
+                self.failure = error as? LivePhotoError
+                    ?? LivePhotoError(.remux, "生成失败", underlying: error)
                 self.phase = .failed
             }
         }
@@ -589,10 +619,10 @@ final class AppModel: ObservableObject {
     func presentOpenPanel() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.mpeg4Movie, .quickTimeMovie, .movie]
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url {
-            load(url)
+        if panel.runModal() == .OK, !panel.urls.isEmpty {
+            accept(urls: panel.urls)
         }
     }
 

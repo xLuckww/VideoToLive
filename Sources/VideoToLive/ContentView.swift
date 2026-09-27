@@ -1,19 +1,29 @@
 import VideoToLiveCore
 import SwiftUI
 
-/// 窗口外壳：没有视频时整窗是拖放区；有视频时是「顶栏 + 预览/侧栏 + 时间轴」的剪辑布局。
+/// 窗口外壳：左侧是可收起的队列 / 历史面板；右侧没有视频时整块是拖放区，
+/// 有视频时是「顶栏 + 预览/侧栏 + 时间轴」的剪辑布局。
 struct ContentView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        ZStack {
-            Theme.window.ignoresSafeArea()
-            if model.info == nil {
-                EmptyStateView(model: model)
-            } else {
-                editor
+        HStack(spacing: 0) {
+            if model.showsSidePanel {
+                SidePanel(model: model, queue: model.queue, history: model.history)
+                    .frame(width: 280)
+                Rectangle().fill(Theme.hairline).frame(width: 0.5)
+            }
+            ZStack {
+                Theme.window
+                if model.info == nil {
+                    EmptyStateView(model: model)
+                } else {
+                    editor
+                }
             }
         }
+        .ignoresSafeArea(edges: .top)
+        .background(Theme.window.ignoresSafeArea())
         .foregroundStyle(Theme.text)
         .dropDestination(for: URL.self) { urls, _ in
             model.accept(urls: urls)
@@ -50,6 +60,7 @@ struct TopBar: View {
         ZStack {
             WindowDragArea()
             HStack(spacing: 10) {
+                SidePanelToggle(model: model)
                 if let info = model.info {
                     Text(info.url.lastPathComponent)
                         .font(.system(size: 13, weight: .medium))
@@ -65,6 +76,10 @@ struct TopBar: View {
                 Button("换一个") { model.reset() }
                     .buttonStyle(GhostButtonStyle())
                     .disabled(model.phase == .converting)
+                Button("加入队列") { model.addCurrentToQueue() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(model.info == nil)
+                    .help("按当前区间放进批量队列，可以接着换下一个视频")
                 Button(model.phase == .finished ? "再生成一次" : "生成 Live Photo") {
                     model.convert()
                 }
@@ -72,7 +87,8 @@ struct TopBar: View {
                 .disabled(!model.canConvert)
                 .keyboardShortcut(.defaultAction)
             }
-            .padding(.leading, 84)
+            // 面板收起时红绿灯压在这里，要让开；展开时红绿灯在面板上。
+            .padding(.leading, model.showsSidePanel ? 12 : 84)
             .padding(.trailing, 16)
         }
         .frame(height: 52)
@@ -93,6 +109,11 @@ struct EmptyStateView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
                     .allowsHitTesting(false)
+                HStack {
+                    SidePanelToggle(model: model)
+                    Spacer()
+                }
+                .padding(.leading, model.showsSidePanel ? 12 : 84)
             }
             .frame(height: 52)
 
@@ -106,7 +127,7 @@ struct EmptyStateView: View {
                 VStack(spacing: 6) {
                     Text("把视频拖到这里")
                         .font(.system(size: 20, weight: .medium))
-                    Text("支持 MP4、MOV、M4V · 视频轨无损转成 Live Photo")
+                    Text("支持 MP4、MOV、M4V · 一次拖入多个会进批量队列")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
                 }

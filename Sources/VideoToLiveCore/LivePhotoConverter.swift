@@ -105,6 +105,9 @@ public enum LivePhotoConverter {
         let directory = request.workDirectory.appendingPathComponent(identity.value, isDirectory: true)
         let photoURL = directory.appendingPathComponent("\(stem).\(request.coverFormat.fileExtension)")
         let videoURL = directory.appendingPathComponent("\(stem).mov")
+        // 失败或取消时连同已经写好的封面一起清掉，不在临时目录里留半成品。
+        var finished = false
+        defer { if !finished { try? FileManager.default.removeItem(at: directory) } }
 
         // 抽帧
         onStage?(.extractCover, 0)
@@ -123,6 +126,8 @@ public enum LivePhotoConverter {
             )
         }
         onStage?(.extractCover, 1)
+        // 队列里的取消要能在阶段之间生效，至少别在取消之后还往图库里写。
+        try Task.checkCancellation()
 
         // 编码封面
         onStage?(.encodeCover, 0)
@@ -138,6 +143,7 @@ public enum LivePhotoConverter {
         let photoSize = ((try? FileManager.default.attributesOfItem(atPath: photoURL.path))?[.size]
             as? NSNumber)?.int64Value ?? 0
         onStage?(.encodeCover, 1)
+        try Task.checkCancellation()
 
         // 封装
         onStage?(.remux, 0)
@@ -164,6 +170,7 @@ public enum LivePhotoConverter {
         }
 
         // 写入图库
+        try Task.checkCancellation()
         var importResult: ImportResult?
         if request.importToLibrary {
             onStage?(.importLibrary, 0)
@@ -173,6 +180,7 @@ public enum LivePhotoConverter {
             onStage?(.importLibrary, 1)
         }
 
+        finished = true
         return ConversionResult(
             identity: identity,
             info: info,
